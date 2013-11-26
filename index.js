@@ -4,6 +4,8 @@
 ---------------------------------------------------------------*/
 
 var async = require('async');
+var request = require('request');
+//var qs = require('querystring');
 
 var adapter = module.exports = {
 
@@ -103,10 +105,26 @@ var adapter = module.exports = {
   // (e.g. if this is a find(), not a findAll(), it will only send back a single model)
   find: function(collectionName, options, cb) {
 
-    // ** Filter by criteria in options to generate result set
+    // sails.log.error(options);
+    // sails.log.error(options.where.id.split(','));
 
-    // Respond with an error or a *list* of models in result set
-    cb(null, []);
+    // ** Filter by criteria in options to generate result set
+    switch (collectionName) {
+      case 'vwheritageproduct':
+        get("product_info", options.where.id, function (err, res) {
+          // Respond with an error or a *list* of models in result set
+          cb(err, res);
+        });
+      break;
+      case 'vwheritageimage':
+        get("image_info", options.where.id, function (err, res) {
+          // Respond with an error or a *list* of models in result set
+          cb(err, res);
+        });
+      break;
+      default:
+        sails.log.error("Unknown Collection Name: "+collectionName);
+    }
   },
 
   // REQUIRED method if users expect to call Model.update()
@@ -221,3 +239,120 @@ var adapter = module.exports = {
 //////////////                 //////////////////////////////////////////
 ////////////// Private Methods //////////////////////////////////////////
 //////////////                 //////////////////////////////////////////
+
+var get = function (method, params, cb) {
+  var method_url = "";
+  var method_query = { sToken : sails.config.vwheritage.sToken };
+  var api_url = sails.config.vwheritage.api_url;
+  var number = params.split(',').length;
+  var error = "";
+  switch (method) {
+    case 'product_info':
+      method_url = sails.config.vwheritage.product_info_url;
+      method_query[sails.config.vwheritage.product_info_query] = params;
+    break;
+    case 'product_list':
+      method_url = sails.config.vwheritage.product_list_url;
+    break;
+    case 'image_info':
+      method_url = sails.config.vwheritage.image_info_url;
+      method_query[sails.config.vwheritage.image_info_query] = params;
+    break;
+    default:
+      error = "Unknown method";
+      sails.log.error(error);
+      cb(error, null)
+    break;
+  }
+
+  if (number > 1) {
+    var request_url = api_url + method_url;
+    var request_qs = method_query;
+  } else {
+    var request_url = api_url + method_url + "/" + params;
+    var request_qs = {sToken : method_query.sToken};
+  }
+
+  console.log("request_url: "+request_url);
+
+  var method = method;
+
+  request({url: request_url, qs: request_qs, json: true}, function (error, response, body) {
+    if (!error && response.statusCode == 200) {
+      //sails.log.error("statusCode: "+response.statusCode);
+      //sails.log.info(response);
+      switch (method) {
+        case 'product_info':
+          var body = normalizeProduct (body);
+        break;
+        case 'product_list':
+
+        break;
+        case 'image_info':
+
+        break;
+      }
+      if(!error && !(body instanceof Array))
+        body = [body];
+      //sails.log.info(body);
+      cb(null, body);
+    } else {
+      sails.log.error(error);
+      sails.log.error("statusCode: "+response.statusCode);
+      //sails.log.info(response);
+      cb({error: error, status: response.statusCode}, null);
+    }
+  });
+}
+
+/*
+ * Zerteilt die description in einzele Attribute
+ */
+var normalizeDescription = function (data) {
+  var description = {};
+  data.originaldescription = data.DESCRIPTION;
+  description.values = data.DESCRIPTION.toString().split('$');
+  //description.names = new Array(description.values.length);
+
+  switch (description.values.length) {
+    // do not make a break in this switch case statement!
+    case 5:
+      var metrics = description.values[4].replace(/\'/g, "&#39;");
+      if(metrics.length > 1) {
+        data.metrics = metrics.split("\r\n");
+        // ersten Eintrag loeschen, dieser hat keinen Inhalt.
+        data.metrics.splice(0, 1);
+      }
+    case 4:
+      data.fittinginfo = description.values[3].replace(/\r\n/g, "<br>");
+    case 3:
+      data.quality = description.values[2].replace(/\r\n/g, "");
+    case 2:
+      data.description = description.values[1].replace(/\r\n/g, "<br>");
+    case 1:
+      data.applications = description.values[0].split("\r\n");//.replace(/\r/g, "").replace(/\n/g, "");
+      // letzten Eintrag loeschen, dieser hat keinen Inhalt.
+      data.applications.splice(data.applications.length-1, data.applications.length-1);
+      delete data.DESCRIPTION;
+  }
+  return data;
+};
+/*
+ * Transformiert das Request-Ergebniss in ein besser behandelbares Format 
+ */
+var normalizeProduct = function (data) {
+  data = normalizeDescription (data.DATA);
+  data.sku = data.ITEMNUMBER[0];
+  data.ITEMNAME = data.ITEMNAME[0];
+  data.WEIGHT = data.WEIGHT[0];
+  data.FREESTOCKQUANTITY = data.FREESTOCKQUANTITY[0];
+  data.SPECIALORDER = data.SPECIALORDER[0];
+  data.COSTPRICE = data.COSTPRICE[0];
+  data.RETAILPRICE = data.RETAILPRICE[0];
+  data.PRICE2 = data.PRICE2[0];
+  data.PRICE3 = data.PRICE3[0];
+  data.PRICE4 = data.PRICE4[0];
+  data.DUEWEEKS = data.DUEWEEKS[0];
+  data.AVAILABILITYMESSAGECODE = data.AVAILABILITYMESSAGECODE[0];
+  return data;
+};
