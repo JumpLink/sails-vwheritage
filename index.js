@@ -111,10 +111,20 @@ var adapter = module.exports = {
     // ** Filter by criteria in options to generate result set
     switch (collectionName) {
       case 'vwheritageproduct':
-        get("product_info", options.where.id, function (err, res) {
-          // Respond with an error or a *list* of models in result set
-          cb(err, res);
-        });
+        if (typeof(options.where) === 'undefined' || options.where === null)
+          get("product_list", null, function (err, res) {
+            cb(err, res);
+          });
+        else if (typeof(options.where.id) !== 'undefined')
+          get("product_info", options.where.id, function (err, res) {
+            // Respond with an error or a *list* of models in result set
+            cb(err, res);
+          });
+        else {
+          sails.log.error("Missing ID");
+          cb("Missing ID", null);
+        }
+
       break;
       case 'vwheritageimage':
         get("image_info", options.where.id, function (err, res) {
@@ -244,7 +254,10 @@ var get = function (method, params, cb) {
   var method_url = "";
   var method_query = { sToken : sails.config.vwheritage.sToken };
   var api_url = sails.config.vwheritage.api_url;
-  var number = params.split(',').length;
+  if(params)
+    var number = params.split(',').length;
+  else
+    var number = 0;
   var error = "";
   switch (method) {
     case 'product_info':
@@ -265,15 +278,26 @@ var get = function (method, params, cb) {
     break;
   }
 
-  if (number > 1) {
-    var request_url = api_url + method_url;
-    var request_qs = method_query;
-  } else {
-    var request_url = api_url + method_url + "/" + params;
-    var request_qs = {sToken : method_query.sToken};
+  switch (method) {
+    case 'product_info':
+    case 'image_info':
+      if (number > 1) {
+        var request_url = api_url + method_url;
+        var request_qs = method_query;
+      } else {
+        var request_url = api_url + method_url + "/" + params;
+        var request_qs = {sToken : method_query.sToken};
+      }
+    break;
+    case 'product_list':
+      var request_url = api_url + method_url;
+      var request_qs = {sToken : method_query.sToken};
+    break;
   }
 
+
   console.log("request_url: "+request_url);
+  console.log("query string: "+request_url);
 
   var method = method;
 
@@ -283,18 +307,15 @@ var get = function (method, params, cb) {
       //sails.log.info(response);
       switch (method) {
         case 'product_info':
-          var body = normalizeProduct (body);
-        break;
         case 'product_list':
-
-        break;
         case 'image_info':
-
+          var body = normalize (body, method);
         break;
+        
       }
       if(!error && !(body instanceof Array))
         body = [body];
-      //sails.log.info(body);
+     //sails.log.info(body);
       cb(null, body);
     } else {
       sails.log.error(error);
@@ -308,51 +329,95 @@ var get = function (method, params, cb) {
 /*
  * Zerteilt die description in einzele Attribute
  */
-var normalizeDescription = function (data) {
+var normalizeDescription = function (product) {
   var description = {};
-  data.originaldescription = data.DESCRIPTION;
-  description.values = data.DESCRIPTION.toString().split('$');
+  product.originaldescription = product.DESCRIPTION;
+  description.values = product.DESCRIPTION.toString().split('$');
   //description.names = new Array(description.values.length);
 
   switch (description.values.length) {
     // do not make a break in this switch case statement!
+    default:
+      sails.log.warn("unknown value in description:");
+      sails.log.warn(description.values);
+    case 6:
+      sails.log.warn("unknown value in description:");
+      sails.log.warn(description.values[5]);
     case 5:
       var metrics = description.values[4].replace(/\'/g, "&#39;");
       if(metrics.length > 1) {
-        data.metrics = metrics.split("\r\n");
+        product.metrics = metrics.split("\r\n");
         // ersten Eintrag loeschen, dieser hat keinen Inhalt.
-        data.metrics.splice(0, 1);
+        product.metrics.splice(0, 1);
       }
     case 4:
-      data.fittinginfo = description.values[3].replace(/\r\n/g, "<br>");
+      product.fittinginfo = description.values[3].replace(/\r\n/g, "<br>");
     case 3:
-      data.quality = description.values[2].replace(/\r\n/g, "");
+      product.quality = description.values[2].replace(/\r\n/g, "");
     case 2:
-      data.description = description.values[1].replace(/\r\n/g, "<br>");
+      product.description = description.values[1].replace(/\r\n/g, "<br>");
     case 1:
-      data.applications = description.values[0].split("\r\n");//.replace(/\r/g, "").replace(/\n/g, "");
+      product.applications = description.values[0].split("\r\n");//.replace(/\r/g, "").replace(/\n/g, "");
       // letzten Eintrag loeschen, dieser hat keinen Inhalt.
-      data.applications.splice(data.applications.length-1, data.applications.length-1);
-      delete data.DESCRIPTION;
+      product.applications.splice(product.applications.length-1, product.applications.length-1);
+      delete product.DESCRIPTION;
+    case 0:
   }
-  return data;
+  return product;
 };
 /*
  * Transformiert das Request-Ergebniss in ein besser behandelbares Format 
  */
 var normalizeProduct = function (data) {
-  data = normalizeDescription (data.DATA);
-  data.sku = data.ITEMNUMBER[0];
-  data.ITEMNAME = data.ITEMNAME[0];
-  data.WEIGHT = data.WEIGHT[0];
-  data.FREESTOCKQUANTITY = data.FREESTOCKQUANTITY[0];
-  data.SPECIALORDER = data.SPECIALORDER[0];
-  data.COSTPRICE = data.COSTPRICE[0];
-  data.RETAILPRICE = data.RETAILPRICE[0];
-  data.PRICE2 = data.PRICE2[0];
-  data.PRICE3 = data.PRICE3[0];
-  data.PRICE4 = data.PRICE4[0];
-  data.DUEWEEKS = data.DUEWEEKS[0];
-  data.AVAILABILITYMESSAGECODE = data.AVAILABILITYMESSAGECODE[0];
+  if (typeof(data.DESCRIPTION) !== 'undefined') {
+    data = normalizeDescription (data);
+  }
+  if (typeof(data.ITEMNUMBER) !== 'undefined') {
+    data.sku = data.ITEMNUMBER;
+    delete data.ITEMNUMBER;
+  }
+  if (typeof(data.CODE) !== 'undefined') {
+    data.sku = data.CODE;
+    delete data.CODE;
+  }
+  if (typeof(data.ITEMID) !== 'undefined') {
+    data.id = data.ITEMID;
+    delete data.ITEMID;
+  }
+  if (typeof(data.ITEMNAME) !== 'undefined') {
+    data.name = data.ITEMNAME;
+    delete data.ITEMNAME;
+  }
   return data;
+};
+
+var normalize = function (data, method) {
+
+  var result = [];
+
+  if(method === 'product_info' || method === 'product_list') {
+    for (var i = 0; i < data.ROWCOUNT; i++) {
+      result[i] = {};
+      Object.keys(data.DATA).forEach(function(key) {
+        result[i][key] = data.DATA[key][i];
+      });
+      result[i] = normalizeProduct(result[i]);
+    };
+
+    if(method === 'product_info' && data.ROWCOUNT > 1) {
+      sails.log.warn("product_info gibt zur zeit nur das erste element zurück!");
+    }
+  }
+
+  if(method === 'image_info') {
+    result[0] = [];
+    // Unnötigen Key entfernen, z.B. item_99797 aus "item_99797": {"image_02": {}, "image_01": {}"
+    Object.keys(data).forEach(function(item_id) {
+      // image_01, image_02 usw zum array umwandeln
+      Object.keys(data[item_id]).forEach(function(image_number) {
+        result[0].push(data[item_id][image_number]);
+      });
+    });
+  }
+  return result;
 };
