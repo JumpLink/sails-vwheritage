@@ -1,14 +1,14 @@
 {
-  "name": "sails-adapter-boilerplate",
-  "version": "0.0.1",
-  "description": "Boilerplate adapter for Sails.js",
-  "main": "BoilerplateAdapter.js",
+  "name": "sails-vwheritage",
+  "version": "0.1.0",
+  "description": "VWHeritage adapter for Sails.js",
+  "main": "VWHeritageAdapter.js",
   "scripts": {
     "test": "echo \"Adapter should be tested using Sails.js core.\" && exit 1"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/balderdashy/sails-adapter-boilerplate.git"
+    "url": "git@github.com:JumpLink/sails-vwheritage.git"
   },
   "keywords": [
     "orm",
@@ -17,7 +17,7 @@
     "sailsjs",
     "sails.js"
   ],
-  "author": "Your name here",
+  "author": "Pascal Garber",
   "license": "MIT",
   "readmeFilename": "README.md",
   "dependencies": {
