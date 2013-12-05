@@ -113,10 +113,14 @@ var adapter = module.exports = {
       case 'vwheritageproduct':
         if (typeof(options.where) === 'undefined' || options.where === null)
           get("product_list", null, function (err, res) {
+            if(!err)
+              res = skuWithoutSpezialKeysEach(res);
             cb(err, res);
           });
         else if (typeof(options.where.id) !== 'undefined')
           get("product_info", options.where.id, function (err, res) {
+            if(!err)
+              res = skuWithoutSpezialKeysEach(res);
             // Respond with an error or a *list* of models in result set
             cb(err, res);
           });
@@ -249,6 +253,18 @@ var adapter = module.exports = {
 //////////////                 //////////////////////////////////////////
 ////////////// Private Methods //////////////////////////////////////////
 //////////////                 //////////////////////////////////////////
+
+var skuWithoutSpezialKeys = function (product) {
+  product.sku_clean = product.sku.replace(/\/|-|\.|\s/g, ""); // replace "/", "-", "." and " " with nothing 
+  return product;
+}
+
+var skuWithoutSpezialKeysEach = function (product_list) {
+  for (var i = 0; i < product_list.length; i++) {
+    product_list[i] = skuWithoutSpezialKeys (product_list[i]);
+  };
+  return product_list;
+}
 
 var get = function (method, params, cb) {
   var method_url = "";
