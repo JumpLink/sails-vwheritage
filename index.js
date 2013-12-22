@@ -5,7 +5,7 @@
 
 var async = require('async');
 var request = require('request');
-//var qs = require('querystring');
+var qs = require('querystring');
 
 var adapter = module.exports = {
 
@@ -110,17 +110,13 @@ var adapter = module.exports = {
 
     // ** Filter by criteria in options to generate result set
     switch (collectionName) {
-      case 'vwheritageproduct':
+      case 'vwhproduct':
         if (typeof(options.where) === 'undefined' || options.where === null)
           get("product_list", null, function (err, res) {
-            if(!err)
-              res = skuWithoutSpezialKeysEach(res);
             cb(err, res);
           });
         else if (typeof(options.where.id) !== 'undefined')
           get("product_info", options.where.id, function (err, res) {
-            if(!err)
-              res = skuWithoutSpezialKeysEach(res);
             // Respond with an error or a *list* of models in result set
             cb(err, res);
           });
@@ -130,7 +126,7 @@ var adapter = module.exports = {
         }
 
       break;
-      case 'vwheritageimage':
+      case 'vwhimage':
         get("image_info", options.where.id, function (err, res) {
           // Respond with an error or a *list* of models in result set
           cb(err, res);
@@ -173,7 +169,7 @@ var adapter = module.exports = {
     // for an example, check out:
     // https://github.com/balderdashy/sails-dirty/blob/master/DirtyAdapter.js#L247
 
-  }
+  },
 
 
 
@@ -231,7 +227,7 @@ var adapter = module.exports = {
 
   Model.foo(function (err, result) {
     if (err) console.error(err);
-    else console.log(result);
+    else sails.log.debug(result);
 
     // outputs: ok
   })
@@ -240,13 +236,106 @@ var adapter = module.exports = {
 
   Model.bar(235, {test: 'yes'}, function (err, result){
     if (err) console.error(err);
-    else console.log(result);
+    else sails.log.debug(result);
 
     // outputs: Failure!
   })
 
   */
 
+  infos: function (collectionName, final_callback) {
+
+    var transform_1d_array_to_2d_array_of_max = function(one_d_array) {
+      var MAX = 80;
+      var tow_d_array = [];
+      tow_d_array.length = Math.round( (one_d_array.length / MAX) + 0.5 ); // Round up
+      var last_array_length = one_d_array.length - ( Math.round( (one_d_array.length / MAX) - 0.5 ) /*Round down*/ * MAX );
+      for (var i = 0; i < tow_d_array.length; i++) {
+        var tmp_array = [];
+        for (var a = 0; a < MAX && one_d_array.length > i*MAX+a; a++) {
+          tmp_array.push(one_d_array[i*MAX+a]);
+        }
+        tow_d_array[i] = tmp_array;
+      }
+      if (tow_d_array[tow_d_array.length-1].length === last_array_length)
+        sails.log.debug("OK");
+      else
+        sails.log.debug("ERROR");
+      return tow_d_array;
+    };
+
+    var get_product_list = function (callback){
+      get("product_list", null, callback);
+    };
+
+    var get_sku_from_product = function (product, callback) {
+      callback(null, product.sku);
+    };
+
+    var get_id_from_product = function (product, callback) {
+      callback(null, product.id);
+    };
+
+    var extract_skus_from_product_list = function (product_list, callback) {
+      async.map(
+          product_list
+        , get_sku_from_product
+        , callback
+      );
+    };
+
+    var extract_ids_from_product_list = function (product_list, callback) {
+      async.map(
+          product_list
+        , get_id_from_product
+        , callback
+      );
+    };
+
+
+    var iterate_sku_block = function (one_d_array, callback) {
+      get("product_info", one_d_array, callback);
+    }
+
+    var get_product_info_for_each = function (skus_or_ids, callback){
+      //sails.log.debug(skus_or_ids);
+      var tow_d_array = transform_1d_array_to_2d_array_of_max(skus_or_ids);
+      async.map(
+          tow_d_array
+        , iterate_sku_block
+        , callback
+      );
+    };
+
+    var transform_block_results = function (blocks, callback) {
+      var result = [];
+
+      for (var i = 0; i < blocks.length; i++) {
+        for (var k = blocks[i].length - 1; k >= 0; k--) {
+          result.push(blocks[i][k]);
+        };
+      };
+
+      callback(null, result);
+    }
+
+    // get infos by sku
+    // async.waterfall([
+    //     get_product_list
+    //   , extract_skus_from_product_list
+    //   , get_product_info_for_each
+    //   , transform_block_results
+    // ],final_callback);
+
+    // get infos by id
+    async.waterfall([
+        get_product_list
+      , extract_ids_from_product_list
+      , get_product_info_for_each
+      , transform_block_results
+    ],final_callback);
+
+  }
 
 };
 
@@ -254,38 +343,36 @@ var adapter = module.exports = {
 ////////////// Private Methods //////////////////////////////////////////
 //////////////                 //////////////////////////////////////////
 
-var skuWithoutSpezialKeys = function (product) {
-  product.sku_clean = product.sku.replace(/\/|-|\.|\s/g, ""); // replace "/", "-", "." and " " with nothing 
-  return product;
-}
-
-var skuWithoutSpezialKeysEach = function (product_list) {
-  for (var i = 0; i < product_list.length; i++) {
-    product_list[i] = skuWithoutSpezialKeys (product_list[i]);
-  };
-  return product_list;
-}
-
 var get = function (method, params, cb) {
   var method_url = "";
-  var method_query = { sToken : sails.config.vwheritage.sToken };
-  var api_url = sails.config.vwheritage.api_url;
-  if(params)
-    var number = params.split(',').length;
-  else
+  var method_query = { sToken : sails.config.vwh.sToken };
+  var api_url = sails.config.vwh.api_url;
+
+  if(params) {
+    // If params is an array, save length and convert to comma separated string
+    if(params instanceof Array) {
+      var number = params.length;
+      params = params.join(",");
+    } else { // If params is not an array, save count of commas
+      var number = params.split(',').length;
+      // params = encodeURIComponent(params);
+    }
+  } else { 
     var number = 0;
+  }
+
   var error = "";
   switch (method) {
     case 'product_info':
-      method_url = sails.config.vwheritage.product_info_url;
-      method_query[sails.config.vwheritage.product_info_query] = params;
+      method_url = sails.config.vwh.product_info_url;
+      method_query[sails.config.vwh.product_info_query] = params;
     break;
     case 'product_list':
-      method_url = sails.config.vwheritage.product_list_url;
+      method_url = sails.config.vwh.product_list_url;
     break;
     case 'image_info':
-      method_url = sails.config.vwheritage.image_info_url;
-      method_query[sails.config.vwheritage.image_info_query] = params;
+      method_url = sails.config.vwh.image_info_url;
+      method_query[sails.config.vwh.image_info_query] = params;
     break;
     default:
       error = "Unknown method";
@@ -311,13 +398,17 @@ var get = function (method, params, cb) {
     break;
   }
 
+  var url_final = request_url + "?" + qs.stringify(request_qs).replace(/%2C/g, ',');;
 
-  console.log("request_url: "+request_url);
-  console.log("query string: "+request_url);
+  // sails.log.debug("request_url: "+request_url);
+  // sails.log.debug("query string: ");
+  // sails.log.debug(request_qs);
+  sails.log.debug("final_url: "+url_final);
 
   var method = method;
 
-  request({url: request_url, qs: request_qs, json: true}, function (error, response, body) {
+  //request({url: request_url, qs: request_qs, json: true}, function (error, response, body) {
+  request({url: url_final, json: true}, function (error, response, body) {
     if (!error && response.statusCode == 200) {
       //sails.log.error("statusCode: "+response.statusCode);
       //sails.log.info(response);
@@ -335,7 +426,9 @@ var get = function (method, params, cb) {
       cb(null, body);
     } else {
       sails.log.error(error);
-      sails.log.error("statusCode: "+response.statusCode);
+      // sails.log.error("statusCode: "+response.statusCode);
+      sails.log.error("on url: "+url_final);
+      sails.log.error("response: "+response);
       //sails.log.info(response);
       cb({error: error, status: response.statusCode}, null);
     }
@@ -354,11 +447,11 @@ var normalizeDescription = function (product) {
   switch (description.values.length) {
     // do not make a break in this switch case statement!
     default:
-      sails.log.warn("unknown value in description:");
-      sails.log.warn(description.values);
+      // sails.log.warn("unknown value in description:");
+      // sails.log.warn(description.values);
     case 6:
-      sails.log.warn("unknown value in description:");
-      sails.log.warn(description.values[5]);
+      // sails.log.warn("unknown value in description:");
+      // sails.log.warn(description.values[5]);
     case 5:
       var metrics = description.values[4].replace(/\'/g, "&#39;");
       if(metrics.length > 1) {
@@ -396,6 +489,9 @@ var normalizeProduct = function (data) {
     data.sku = data.CODE;
     delete data.CODE;
   }
+  if (typeof(data.sku) !== 'undefined') {
+    data.sku_clean = data.sku.replace(/\/|-|\.|\s/g, "");
+  }
   if (typeof(data.ITEMID) !== 'undefined') {
     data.id = data.ITEMID;
     delete data.ITEMID;
@@ -403,6 +499,57 @@ var normalizeProduct = function (data) {
   if (typeof(data.ITEMNAME) !== 'undefined') {
     data.name = data.ITEMNAME;
     delete data.ITEMNAME;
+  }
+  if (typeof(data.SPECIALORDER) !== 'undefined') {
+    if(data.SPECIALORDER == "n")
+      data.special_order = false;
+    else
+      data.special_order = true;
+    delete data.SPECIALORDER;
+  }
+  if (typeof(data.FREESTOCKQUANTITY) !== 'undefined') {
+    data.free_stock_quantity = data.FREESTOCKQUANTITY;
+    delete data.FREESTOCKQUANTITY;
+  }
+  if (typeof(data.RETAILPRICE) !== 'undefined') {
+    data.retail_price = data.RETAILPRICE;
+    delete data.RETAILPRICE;
+  }
+  if (typeof(data.COSTPRICE) !== 'undefined') {
+    data.cost_price = data.COSTPRICE;
+    delete data.COSTPRICE;
+  }
+  if (typeof(data.COSTPRICE) !== 'undefined') {
+    data.cost_price = data.COSTPRICE;
+    delete data.COSTPRICE;
+  }
+  if (typeof(data.DUEWEEKS) !== 'undefined') {
+    data.dueweeks = data.DUEWEEKS;
+    delete data.DUEWEEKS;
+  }
+  if (typeof(data.WEIGHT) !== 'undefined') {
+    data.weight = data.WEIGHT;
+    delete data.WEIGHT;
+  }
+  if (typeof(data.AVAILABILITYMESSAGECODE) !== 'undefined') {
+    data.availability_message_code = data.AVAILABILITYMESSAGECODE;
+    delete data.AVAILABILITYMESSAGECODE;
+  }
+  if (typeof(data.AVAILABILITYMESSAGECODE) !== 'undefined') {
+    data.availability_message_code = data.AVAILABILITYMESSAGECODE;
+    delete data.AVAILABILITYMESSAGECODE;
+  }
+  if (typeof(data.PRICE2) !== 'undefined') {
+    data.price_2 = data.PRICE2;
+    delete data.PRICE2;
+  }
+  if (typeof(data.PRICE3) !== 'undefined') {
+    data.price_3 = data.PRICE3;
+    delete data.PRICE3;
+  }
+  if (typeof(data.PRICE4) !== 'undefined') {
+    data.price_4 = data.PRICE4;
+    delete data.PRICE4;
   }
   return data;
 };
@@ -412,6 +559,8 @@ var normalize = function (data, method) {
   var result = [];
 
   if(method === 'product_info' || method === 'product_list') {
+
+
     for (var i = 0; i < data.ROWCOUNT; i++) {
       result[i] = {};
       Object.keys(data.DATA).forEach(function(key) {
@@ -421,7 +570,7 @@ var normalize = function (data, method) {
     };
 
     if(method === 'product_info' && data.ROWCOUNT > 1) {
-      sails.log.warn("product_info gibt zur zeit nur das erste element zurück!");
+      sails.log.warn("product_info gibt bei regulärer Nutzung nur das erste Element zurück!");
     }
   }
 
@@ -437,3 +586,4 @@ var normalize = function (data, method) {
   }
   return result;
 };
+
