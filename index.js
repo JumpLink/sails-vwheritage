@@ -458,6 +458,10 @@ var get = function (method, params, cb) {
       sails.log.error("on url: "+url_final);
       sails.log.error("response: "+response);
       //sails.log.info(response);
+      if(typeof(response) === 'undefined')
+        response = {};
+      if(typeof(response.statusCode) === 'undefined')
+        response.statusCode = 500;
       cb({error: error, status: response.statusCode}, null);
     }
   });
