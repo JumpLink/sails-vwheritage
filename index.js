@@ -297,12 +297,26 @@ var adapter = module.exports = {
       get("product_info", one_d_array, callback);
     }
 
-    var get_product_info_for_each = function (skus_or_ids, callback){
-      //sails.log.debug(skus_or_ids);
-      var tow_d_array = transform_1d_array_to_2d_array_of_max(skus_or_ids);
+    var iterate_id_block = function (one_d_array, callback) {
+      get("product_info_id", one_d_array, callback);
+    }
+
+    var get_product_info_sku_for_each = function (sku, callback){
+      //sails.log.debug(sku);
+      var tow_d_array = transform_1d_array_to_2d_array_of_max(sku);
       async.map(
           tow_d_array
         , iterate_sku_block
+        , callback
+      );
+    };
+
+    var get_product_info_id_for_each = function (id, callback){
+      //sails.log.debug(id);
+      var tow_d_array = transform_1d_array_to_2d_array_of_max(id);
+      async.map(
+          tow_d_array
+        , iterate_id_block
         , callback
       );
     };
@@ -319,21 +333,26 @@ var adapter = module.exports = {
       callback(null, result);
     }
 
-    // get infos by sku
-    // async.waterfall([
-    //     get_product_list
-    //   , extract_skus_from_product_list
-    //   , get_product_info_for_each
-    //   , transform_block_results
-    // ],final_callback);
+    var get_infos_by_skus = function (callback) {
+      async.waterfall([
+          get_product_list
+        , extract_skus_from_product_list
+        , get_product_info_sku_for_each
+        , transform_block_results
+      ],final_callback);
+    }
 
-    // get infos by id
-    async.waterfall([
-        get_product_list
-      , extract_ids_from_product_list
-      , get_product_info_for_each
-      , transform_block_results
-    ],final_callback);
+    var get_infos_by_ids = function (callback) {
+      // get infos by id
+      async.waterfall([
+          get_product_list
+        , extract_ids_from_product_list
+        , get_product_info_id_for_each
+        , transform_block_results
+      ],final_callback);
+    }
+
+    get_infos_by_ids(final_callback);
 
   }
 
@@ -364,8 +383,13 @@ var get = function (method, params, cb) {
   var error = "";
   switch (method) {
     case 'product_info':
+    case 'product_info_sku':
       method_url = sails.config.vwh.product_info_url;
       method_query[sails.config.vwh.product_info_query] = params;
+    break;
+    case 'product_info_id':
+      method_url = sails.config.vwh.product_info_url;
+      method_query[sails.config.vwh.product_info_id_query] = params;
     break;
     case 'product_list':
       method_url = sails.config.vwh.product_list_url;
@@ -383,6 +407,8 @@ var get = function (method, params, cb) {
 
   switch (method) {
     case 'product_info':
+    case 'product_info_id':
+    case 'product_info_sku':
     case 'image_info':
       if (number > 1) {
         var request_url = api_url + method_url;
@@ -414,6 +440,8 @@ var get = function (method, params, cb) {
       //sails.log.info(response);
       switch (method) {
         case 'product_info':
+        case 'product_info_id':
+        case 'product_info_sku':
         case 'product_list':
         case 'image_info':
           var body = normalize (body, method);
@@ -558,8 +586,7 @@ var normalize = function (data, method) {
 
   var result = [];
 
-  if(method === 'product_info' || method === 'product_list') {
-
+  if(method === 'product_info' || method ===  'product_info_id' || method ===  'product_info_sku' || method === 'product_list') {
 
     for (var i = 0; i < data.ROWCOUNT; i++) {
       result[i] = {};
@@ -569,7 +596,7 @@ var normalize = function (data, method) {
       result[i] = normalizeProduct(result[i]);
     };
 
-    if(method === 'product_info' && data.ROWCOUNT > 1) {
+    if((method === 'product_info' || method ===  'product_info_id' || method ===  'product_info_sku') && data.ROWCOUNT > 1) {
       sails.log.warn("product_info gibt bei regulärer Nutzung nur das erste Element zurück!");
     }
   }
